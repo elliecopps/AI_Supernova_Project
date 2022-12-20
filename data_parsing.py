@@ -1,4 +1,5 @@
 
+import math
 import tensorflow as tf
 import pandas as pd
 import numpy as np
@@ -24,11 +25,16 @@ def getDatasets(fileName, xName, yName):
             line = line.strip().split(", ")
             #reading image in color so I can use a pretrained keras model
             img = cv2.imread(imagePath + line[0]+'.jpg', cv2.IMREAD_COLOR)
+            width = img.shape[1]
+            height = img.shape[0]
+            width_scale = 216 / width
+            height_scale = 216 / height
             im = cv2.resize(img, (216, 216)) #resize image to be compatible with the amount of space on my computer
             data.append(im)
-            box_data.append([int(line[1]), int(line[2]), int(line[3]), int(line[4])])
+            box_data.append([int(math.ceil(int(line[1]) * width_scale)), int(math.ceil(int(line[2]) * height_scale)), int(math.ceil(int(line[3]) * width_scale)), int(math.ceil(int(line[4]) * height_scale))])
         except:
             print("image not found")
+            break
     #normalize image color data to go from 0 to 1
     data = np.array(data)/255
     #normalize bounding box location
@@ -39,20 +45,15 @@ def getDatasets(fileName, xName, yName):
 
 def buildModel():
     model_input = Input(shape=(216,216,3))
-    x = block1(16, model_input)
-    x = block1(32, x)
-    x = block1(64, x)
+    x = block1(64, model_input)
     x = Flatten()(x)
-    x = block2(512, x)
-    x = block2(256, x)
-    x = block2(128, x)
     x = block2(64, x)
     model_outputs = Dense(4)(x) #fully-connected layer connects everything to the output prediction
 
     model = Model(inputs=[model_input], outputs=[model_outputs])
     
-    model.compile( tf.keras.optimizers.Adam(0.0001), #learning rate is 0.001 to start, can decrease
-                 loss=custom_loss, #wrote custom loss function to include the IOU
+    model.compile(tf.keras.optimizers.Adam(0.0001), #learning rate is 0.001 to start, can decrease
+                 loss='mse', 
                  metrics=[IOU])
     
     return model
@@ -63,12 +64,13 @@ def block1(filters,X):
     x = LeakyReLU(0.2)(x) #correction layer replaces negative numbers with 0.2 (not zero! no dead neurons)
     x = Conv2D(filters, (3,3), strides=1)(x)
     x = LeakyReLU(0.2)(x)
+    x = Dropout(0.4)(x) #adding another dropout layer to combat overfitting
     x = MaxPool2D((2,2))(x) #pooling layer reduces image size and preserves important characteristics
     return x
 
 def block2(units,X):  
     x = Dense(units)(X)
-    x = Dropout(0.1)(x)
+    x = Dropout(0.2)(x)
     x = LeakyReLU(0.2)(x)    
     return x
 
@@ -93,10 +95,10 @@ def train_model(model):
     predictions = model.predict(x_val)
     print("predictions: ", predictions)
     #save predictions so I can plot them later
-    save("predictionsv2.npy", predictions)
+    save("predictions2_3.npy", predictions)
     #save history so I can see how training progressed
     history_df = pd.DataFrame(history.history)
-    hist_file = 'historyv2.csv'
+    hist_file = 'history2_3.csv'
     with open(hist_file, 'w') as f:
         history_df.to_csv(f)
     return
